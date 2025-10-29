@@ -1,5 +1,5 @@
 import { useState } from "react";
-import { signIn, signUp, signInWithGoogle } from "../../services/authService.js";
+import { signIn, signUp, signInWithGoogle, signInAsGuest } from "../../services/authService.js";
 
 export default function AuthScreen() {
   const [isLogin, setIsLogin] = useState(true);
@@ -39,6 +39,22 @@ export default function AuthScreen() {
 
     try {
       const { user, error } = await signInWithGoogle();
+      if (error) {
+        setError(error);
+      }
+    } catch (err) {
+      setError("An unexpected error occurred");
+    } finally {
+      setLoading(false);
+    }
+  };
+
+  const handleGuestSignIn = async () => {
+    setError("");
+    setLoading(true);
+
+    try {
+      const { user, error } = await signInAsGuest();
       if (error) {
         setError(error);
       }
@@ -140,6 +156,15 @@ export default function AuthScreen() {
               />
             </svg>
             Continue with Google
+          </button>
+
+          <button
+            type="button"
+            className="guest-btn"
+            onClick={handleGuestSignIn}
+            disabled={loading}
+          >
+            👤 Continue as Guest
           </button>
 
           <div className="auth-switch">

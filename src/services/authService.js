@@ -5,6 +5,7 @@ import {
   onAuthStateChanged,
   GoogleAuthProvider,
   signInWithPopup,
+  signInAnonymously,
   updateProfile,
 } from "firebase/auth";
 import { auth } from "../config/firebase.js";
@@ -64,4 +65,14 @@ export const onAuthChange = (callback) => {
 // Get current user
 export const getCurrentUser = () => {
   return auth.currentUser;
+};
+
+// Sign in as guest (anonymous)
+export const signInAsGuest = async () => {
+  try {
+    const userCredential = await signInAnonymously(auth);
+    return { user: userCredential.user, error: null };
+  } catch (error) {
+    return { user: null, error: error.message };
+  }
 };
