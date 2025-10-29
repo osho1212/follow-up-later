@@ -1,14 +1,18 @@
 import { useEffect, useState } from "react";
 import MobileApp from "./modules/mobile/MobileApp.jsx";
 import DesktopApp from "./modules/desktop/DesktopApp.jsx";
+import AuthScreen from "./components/Auth/AuthScreen.jsx";
 import { DeviceContextProvider } from "./context/DeviceContext.jsx";
+import { AuthProvider, useAuth } from "./context/AuthContext.jsx";
+import { logout } from "./services/authService.js";
 
 const MODES = [
   { id: "mobile", label: "Mobile" },
   { id: "desktop", label: "Desktop" },
 ];
 
-export default function App() {
+function AppContent() {
+  const { user, loading } = useAuth();
   const [mode, setMode] = useState("mobile");
   const [theme, setTheme] = useState("light");
   const isDarkMode = theme === "dark";
@@ -21,6 +25,23 @@ export default function App() {
     setTheme((current) => (current === "dark" ? "light" : "dark"));
   };
 
+  const handleLogout = async () => {
+    await logout();
+  };
+
+  if (loading) {
+    return (
+      <div className="app-loading">
+        <div className="loading-spinner"></div>
+        <p>Loading...</p>
+      </div>
+    );
+  }
+
+  if (!user) {
+    return <AuthScreen />;
+  }
+
   return (
     <DeviceContextProvider>
       <div className="app-wrapper">
@@ -29,8 +50,7 @@ export default function App() {
             <p className="badge">Follow Up Later • Prototype</p>
             <h1>Dual-platform experience</h1>
             <p className="subtitle">
-              Explore the mobile and desktop shells crafted for a premium yet
-              focused follow-up workflow.
+              Welcome, {user.displayName || user.email}!
             </p>
           </div>
           <div className="app-header__actions">
@@ -56,6 +76,13 @@ export default function App() {
             >
               {isDarkMode ? "Light theme" : "Dark theme"}
             </button>
+            <button
+              className="ghost-button"
+              onClick={handleLogout}
+              type="button"
+            >
+              Logout
+            </button>
           </div>
         </header>
 
@@ -64,5 +91,13 @@ export default function App() {
         </main>
       </div>
     </DeviceContextProvider>
+  );
+}
+
+export default function App() {
+  return (
+    <AuthProvider>
+      <AppContent />
+    </AuthProvider>
   );
 }
