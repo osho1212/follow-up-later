@@ -6,20 +6,35 @@ import { DeviceContextProvider } from "./context/DeviceContext.jsx";
 import { AuthProvider, useAuth } from "./context/AuthContext.jsx";
 import { logout } from "./services/authService.js";
 
-const MODES = [
-  { id: "mobile", label: "Mobile" },
-  { id: "desktop", label: "Desktop" },
-];
+// Detect if user is on mobile device
+const isMobileDevice = () => {
+  return /Android|webOS|iPhone|iPad|iPod|BlackBerry|IEMobile|Opera Mini/i.test(
+    navigator.userAgent
+  ) || window.innerWidth <= 768;
+};
 
 function AppContent() {
   const { user, loading } = useAuth();
-  const [mode, setMode] = useState("mobile");
+  const [mode, setMode] = useState(() => isMobileDevice() ? "mobile" : "desktop");
   const [theme, setTheme] = useState("light");
+  const [showDevTools, setShowDevTools] = useState(false);
   const isDarkMode = theme === "dark";
 
   useEffect(() => {
     document.documentElement.classList.toggle("dark", isDarkMode);
   }, [isDarkMode]);
+
+  // Listen for window resize to switch modes automatically
+  useEffect(() => {
+    const handleResize = () => {
+      if (!showDevTools) {
+        setMode(isMobileDevice() ? "mobile" : "desktop");
+      }
+    };
+
+    window.addEventListener("resize", handleResize);
+    return () => window.removeEventListener("resize", handleResize);
+  }, [showDevTools]);
 
   const toggleTheme = () => {
     setTheme((current) => (current === "dark" ? "light" : "dark"));
@@ -42,6 +57,18 @@ function AppContent() {
     return <AuthScreen />;
   }
 
+  // On mobile devices, show full-screen mobile app without wrapper
+  if (isMobileDevice() && !showDevTools) {
+    return (
+      <DeviceContextProvider>
+        <div className="mobile-fullscreen">
+          <MobileApp />
+        </div>
+      </DeviceContextProvider>
+    );
+  }
+
+  // On desktop or when dev tools are enabled, show the prototype wrapper
   return (
     <DeviceContextProvider>
       <div className="app-wrapper">
@@ -55,18 +82,26 @@ function AppContent() {
           </div>
           <div className="app-header__actions">
             <div className="mode-toggle">
-              {MODES.map((option) => (
-                <button
-                  key={option.id}
-                  className={`mode-toggle__button ${
-                    mode === option.id ? "is-active" : ""
-                  }`}
-                  onClick={() => setMode(option.id)}
-                  type="button"
-                >
-                  {option.label}
-                </button>
-              ))}
+              <button
+                className={`mode-toggle__button ${mode === "mobile" ? "is-active" : ""}`}
+                onClick={() => {
+                  setMode("mobile");
+                  setShowDevTools(true);
+                }}
+                type="button"
+              >
+                Mobile
+              </button>
+              <button
+                className={`mode-toggle__button ${mode === "desktop" ? "is-active" : ""}`}
+                onClick={() => {
+                  setMode("desktop");
+                  setShowDevTools(true);
+                }}
+                type="button"
+              >
+                Desktop
+              </button>
             </div>
             <button
               className={`theme-toggle ${isDarkMode ? "is-active" : ""}`}
