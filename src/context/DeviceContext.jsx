@@ -1,4 +1,4 @@
-import { createContext, useCallback, useContext, useEffect, useMemo, useState } from "react";
+import { createContext, useCallback, useContext, useEffect, useMemo, useState, useRef } from "react";
 import { initialReminders, templates, integrations } from "../data/sampleData.js";
 import { useAuth } from "./AuthContext.jsx";
 import {
@@ -7,6 +7,11 @@ import {
   deleteReminder,
   subscribeToReminders,
 } from "../services/reminderService.js";
+import {
+  areNotificationsEnabled,
+  scheduleNotification,
+  cancelScheduledNotification,
+} from "../services/notificationService.js";
 
 const DeviceContext = createContext(null);
 
@@ -17,6 +22,7 @@ export function DeviceContextProvider({ children }) {
   const [completionLog, setCompletionLog] = useState({});
   const [reminderSettings, setReminderSettings] = useState(defaultReminderSettings);
   const [loading, setLoading] = useState(true);
+  const notificationTimeouts = useRef(new Map()); // Track scheduled notifications
 
   // Subscribe to Firestore reminders in real-time
   useEffect(() => {
@@ -52,6 +58,55 @@ export function DeviceContextProvider({ children }) {
       }
       return derivedLog;
     });
+  }, [reminders]);
+
+  // Schedule notifications for reminders
+  useEffect(() => {
+    console.log("[DeviceContext] Checking notifications. Enabled:", areNotificationsEnabled(), "Reminders:", reminders.length);
+
+    if (!areNotificationsEnabled()) {
+      console.log("[DeviceContext] Notifications not enabled, skipping scheduling");
+      return;
+    }
+
+    // Cancel all existing scheduled notifications
+    notificationTimeouts.current.forEach((timeoutId) => {
+      cancelScheduledNotification(timeoutId);
+    });
+    notificationTimeouts.current.clear();
+
+    console.log("[DeviceContext] Scheduling notifications for", reminders.length, "reminders");
+
+    // Schedule notifications for active (non-completed) reminders
+    reminders.forEach((reminder) => {
+      if (reminder.status === "completed") {
+        console.log("[DeviceContext] Skipping completed reminder:", reminder.title);
+        return;
+      }
+
+      const dueDate = getDueDate(reminder);
+      if (!dueDate) {
+        console.log("[DeviceContext] No due date for reminder:", reminder.title);
+        return;
+      }
+
+      console.log("[DeviceContext] Attempting to schedule:", reminder.title, "Due:", dueDate);
+      const timeoutId = scheduleNotification(reminder, dueDate);
+      if (timeoutId) {
+        notificationTimeouts.current.set(reminder.id, timeoutId);
+        console.log("[DeviceContext] Successfully scheduled notification for:", reminder.title);
+      }
+    });
+
+    console.log("[DeviceContext] Total scheduled notifications:", notificationTimeouts.current.size);
+
+    // Cleanup on unmount
+    return () => {
+      notificationTimeouts.current.forEach((timeoutId) => {
+        cancelScheduledNotification(timeoutId);
+      });
+      notificationTimeouts.current.clear();
+    };
   }, [reminders]);
 
   const addReminder = useCallback(

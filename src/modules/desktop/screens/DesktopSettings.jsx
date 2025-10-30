@@ -1,11 +1,23 @@
-import { useState } from "react";
+import { useState, useEffect } from "react";
 import { useDeviceContext } from "../../../context/DeviceContext.jsx";
+import {
+  requestNotificationPermission,
+  getNotificationPermission,
+  showTestNotification,
+} from "../../../services/notificationService.js";
 
 export default function DesktopSettings() {
   const { reminderSettings, updateDefaultDueTime } = useDeviceContext();
   const [showTimeEditor, setShowTimeEditor] = useState(false);
-  const [pushEnabled, setPushEnabled] = useState(true);
+  const [pushEnabled, setPushEnabled] = useState(false);
   const [emailDigestEnabled, setEmailDigestEnabled] = useState(false);
+  const [notificationPermission, setNotificationPermission] = useState("default");
+
+  useEffect(() => {
+    const permission = getNotificationPermission();
+    setNotificationPermission(permission);
+    setPushEnabled(permission === "granted");
+  }, []);
 
   const handleTimeChange = (event) => {
     const newTime = event.target.value;
@@ -68,16 +80,59 @@ export default function DesktopSettings() {
 
         <section className="settings-card">
           <h3>Notifications</h3>
+          {notificationPermission === "unsupported" && (
+            <div className="notification-banner warning">
+              <p>Browser notifications are not supported on this device.</p>
+            </div>
+          )}
+          {notificationPermission === "denied" && (
+            <div className="notification-banner error">
+              <p>Notifications are blocked. Enable them in your browser settings, then click the button below.</p>
+              <button
+                type="button"
+                className="inline-button"
+                style={{ marginTop: "8px" }}
+                onClick={() => {
+                  const permission = getNotificationPermission();
+                  setNotificationPermission(permission);
+                  if (permission === "granted") {
+                    setPushEnabled(true);
+                    showTestNotification();
+                  }
+                }}
+              >
+                Refresh Permission Status
+              </button>
+            </div>
+          )}
           <div className="toggle-row">
             <div>
               <p>Push notifications</p>
-              <p className="muted">Timely nudges for upcoming due items.</p>
+              <p className="muted">
+                {notificationPermission === "granted"
+                  ? "Timely nudges for upcoming due items."
+                  : "Enable to get notified when reminders are due."}
+              </p>
             </div>
             <button
               className={`toggle ${pushEnabled ? "is-on" : ""}`}
               type="button"
               aria-pressed={pushEnabled}
-              onClick={() => setPushEnabled(!pushEnabled)}
+              onClick={async () => {
+                if (!pushEnabled && notificationPermission !== "granted") {
+                  const granted = await requestNotificationPermission();
+                  if (granted) {
+                    setPushEnabled(true);
+                    setNotificationPermission("granted");
+                    showTestNotification();
+                  } else {
+                    setNotificationPermission(getNotificationPermission());
+                  }
+                } else {
+                  setPushEnabled(!pushEnabled);
+                }
+              }}
+              disabled={notificationPermission === "denied" || notificationPermission === "unsupported"}
             >
               <span className="toggle-thumb" />
             </button>

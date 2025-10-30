@@ -1,0 +1,54 @@
+<!DOCTYPE html>
+<html>
+<head>
+    <title>Notification Test</title>
+</head>
+<body>
+    <h1>Simple Notification Test</h1>
+    <button onclick="testNotification()">Test Notification</button>
+    <p id="status"></p>
+
+    <script>
+        function testNotification() {
+            const status = document.getElementById('status');
+
+            status.textContent = 'Permission: ' + Notification.permission;
+            console.log('Permission:', Notification.permission);
+
+            if (Notification.permission === 'denied') {
+                status.textContent = 'Notifications blocked! Enable in browser settings.';
+                return;
+            }
+
+            if (Notification.permission !== 'granted') {
+                Notification.requestPermission().then(permission => {
+                    status.textContent = 'Permission result: ' + permission;
+                    if (permission === 'granted') {
+                        showNotification();
+                    }
+                });
+            } else {
+                showNotification();
+            }
+        }
+
+        function showNotification() {
+            console.log('Creating notification...');
+            const notification = new Notification('Test from HTML', {
+                body: 'This is a simple test notification',
+                requireInteraction: false
+            });
+
+            notification.onshow = () => {
+                console.log('Notification shown!');
+                document.getElementById('status').textContent = 'Notification shown!';
+            };
+
+            notification.onerror = (error) => {
+                console.error('Notification error:', error);
+                document.getElementById('status').textContent = 'Error: ' + error;
+            };
+        }
+    </script>
+</body>
+</html>

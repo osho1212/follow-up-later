@@ -1,4 +1,6 @@
+import { useState } from "react";
 import { getMediaGlyph } from "../../../utils/formatters.js";
+import { useDeviceContext } from "../../../context/DeviceContext.jsx";
 
 const SNOOZE_PRESETS = ["+1 hour", "+3 hours", "Tomorrow 9 AM", "Next Mon 9 AM"];
 const MEDIA_CHOICES = [
@@ -11,6 +13,7 @@ const MEDIA_CHOICES = [
 ];
 
 export default function MobileCreate({ mode, onSwitchMode, onUpgrade }) {
+  const { addReminder } = useDeviceContext();
   return (
     <div className="mobile-screen mobile-create">
       <header className="sheet-header">
@@ -35,12 +38,33 @@ export default function MobileCreate({ mode, onSwitchMode, onUpgrade }) {
         </div>
       </header>
 
-      {mode === "share" ? <SharePanel onUpgrade={onUpgrade} /> : <ManualPanel onUpgrade={onUpgrade} />}
+      {mode === "share" ? <SharePanel onUpgrade={onUpgrade} addReminder={addReminder} /> : <ManualPanel onUpgrade={onUpgrade} addReminder={addReminder} />}
     </div>
   );
 }
 
-function SharePanel({ onUpgrade }) {
+function SharePanel({ onUpgrade, addReminder }) {
+  const [title, setTitle] = useState("Brand collab reply");
+  const [note, setNote] = useState("Send updated rate card + CTA templates.");
+  const [dueDate, setDueDate] = useState("");
+  const [dueTime, setDueTime] = useState("");
+
+  const handleSave = async () => {
+    await addReminder({
+      title,
+      note,
+      dueDate,
+      dueTime,
+      mediaType: "link",
+      source: "share",
+    });
+    // Reset form
+    setTitle("");
+    setNote("");
+    setDueDate("");
+    setDueTime("");
+  };
+
   return (
     <div className="sheet-content">
       <section className="panel surface">
@@ -60,11 +84,19 @@ function SharePanel({ onUpgrade }) {
       <section className="panel">
         <label className="field">
           <span className="field-label">Title</span>
-          <input type="text" defaultValue="Brand collab reply" />
+          <input
+            type="text"
+            value={title}
+            onChange={(e) => setTitle(e.target.value)}
+          />
         </label>
         <label className="field">
           <span className="field-label">Notes</span>
-          <textarea defaultValue="Send updated rate card + CTA templates." rows={3} />
+          <textarea
+            value={note}
+            onChange={(e) => setNote(e.target.value)}
+            rows={3}
+          />
         </label>
         <div className="template-banner" role="button" tabIndex={0} onClick={onUpgrade}>
           <span className="template-pill">PRO</span>
@@ -75,23 +107,31 @@ function SharePanel({ onUpgrade }) {
 
       <section className="panel">
         <div className="field inline">
-          <div>
+          <div style={{ flex: 1 }}>
             <span className="field-label">Due date</span>
-            <button type="button" className="inline-button">
-              Today
-            </button>
+            <input
+              type="date"
+              value={dueDate}
+              onChange={(e) => setDueDate(e.target.value)}
+              className="inline-button"
+              style={{ width: "100%" }}
+            />
           </div>
-          <div>
+          <div style={{ flex: 1 }}>
             <span className="field-label">Time</span>
-            <button type="button" className="inline-button">
-              5:00 PM
-            </button>
+            <input
+              type="time"
+              value={dueTime}
+              onChange={(e) => setDueTime(e.target.value)}
+              className="inline-button"
+              style={{ width: "100%" }}
+            />
           </div>
         </div>
         <div className="ai-suggestion" role="button" tabIndex={0} onClick={onUpgrade}>
           <span className="spark">✧</span>
           <div>
-            <p>AI suggests “Tonight, 7:30 PM”</p>
+            <p>AI suggests "Tonight, 7:30 PM"</p>
             <p className="muted">Upgrade to unlock smart scheduling.</p>
           </div>
         </div>
@@ -108,10 +148,19 @@ function SharePanel({ onUpgrade }) {
       </section>
 
       <section className="sheet-footer">
-        <button className="ghost-button" type="button">
+        <button
+          className="ghost-button"
+          type="button"
+          onClick={() => {
+            setTitle("");
+            setNote("");
+            setDueDate("");
+            setDueTime("");
+          }}
+        >
           Discard
         </button>
-        <button className="primary" type="button">
+        <button className="primary" type="button" onClick={handleSave}>
           Save reminder
         </button>
       </section>
@@ -119,13 +168,41 @@ function SharePanel({ onUpgrade }) {
   );
 }
 
-function ManualPanel({ onUpgrade }) {
+function ManualPanel({ onUpgrade, addReminder }) {
+  const [mediaType, setMediaType] = useState("text");
+  const [title, setTitle] = useState("");
+  const [note, setNote] = useState("");
+  const [dueDate, setDueDate] = useState("");
+  const [dueTime, setDueTime] = useState("");
+
+  const handleSave = async () => {
+    await addReminder({
+      title,
+      note,
+      dueDate,
+      dueTime,
+      mediaType,
+      source: "manual",
+    });
+    // Reset form
+    setTitle("");
+    setNote("");
+    setDueDate("");
+    setDueTime("");
+    setMediaType("text");
+  };
+
   return (
     <div className="sheet-content">
       <section className="panel">
         <div className="media-selector">
           {MEDIA_CHOICES.map((choice) => (
-            <button key={choice.id} type="button" className={`media-selector__item ${choice.id === "text" ? "is-active" : ""}`}>
+            <button
+              key={choice.id}
+              type="button"
+              className={`media-selector__item ${choice.id === mediaType ? "is-active" : ""}`}
+              onClick={() => setMediaType(choice.id)}
+            >
               <span aria-hidden="true">{choice.glyph}</span>
               {choice.label}
             </button>
@@ -133,11 +210,21 @@ function ManualPanel({ onUpgrade }) {
         </div>
         <label className="field">
           <span className="field-label">Title</span>
-          <input type="text" placeholder="Give this follow-up a title" defaultValue="Send invoice #1042" />
+          <input
+            type="text"
+            placeholder="Give this follow-up a title"
+            value={title}
+            onChange={(e) => setTitle(e.target.value)}
+          />
         </label>
         <label className="field">
           <span className="field-label">Notes</span>
-          <textarea placeholder="Add context or paste content…" rows={3} defaultValue="Attach invoice PDF and confirm mailing address." />
+          <textarea
+            placeholder="Add context or paste content…"
+            rows={3}
+            value={note}
+            onChange={(e) => setNote(e.target.value)}
+          />
         </label>
         <div className="attachment-placeholder">
           <p>No attachment yet.</p>
@@ -149,17 +236,25 @@ function ManualPanel({ onUpgrade }) {
 
       <section className="panel">
         <div className="field inline">
-          <div>
+          <div style={{ flex: 1 }}>
             <span className="field-label">Due date</span>
-            <button type="button" className="inline-button">
-              Tomorrow
-            </button>
+            <input
+              type="date"
+              value={dueDate}
+              onChange={(e) => setDueDate(e.target.value)}
+              className="inline-button"
+              style={{ width: "100%" }}
+            />
           </div>
-          <div>
+          <div style={{ flex: 1 }}>
             <span className="field-label">Time</span>
-            <button type="button" className="inline-button">
-              11:00 AM
-            </button>
+            <input
+              type="time"
+              value={dueTime}
+              onChange={(e) => setDueTime(e.target.value)}
+              className="inline-button"
+              style={{ width: "100%" }}
+            />
           </div>
         </div>
         <div className="quick-picks">
@@ -182,10 +277,20 @@ function ManualPanel({ onUpgrade }) {
       </section>
 
       <section className="sheet-footer">
-        <button className="ghost-button" type="button">
+        <button
+          className="ghost-button"
+          type="button"
+          onClick={() => {
+            setTitle("");
+            setNote("");
+            setDueDate("");
+            setDueTime("");
+            setMediaType("text");
+          }}
+        >
           Cancel
         </button>
-        <button className="primary" type="button">
+        <button className="primary" type="button" onClick={handleSave}>
           Save reminder
         </button>
       </section>
