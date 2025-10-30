@@ -214,7 +214,7 @@ function SegmentGroup({ title, reminders, onSelectReminder, onComplete, onSnooze
         <ul className="reminder-table">
           {reminders.map((reminder) => (
             <li key={reminder.id} className={`reminder-row status-${reminder.status}`}>
-              <button type="button" onClick={() => onSelectReminder(reminder.id)}>
+              <div className="reminder-row-content" onClick={() => onSelectReminder(reminder.id)}>
                 <span className="glyph">{getMediaGlyph(reminder.mediaType)}</span>
                 <div className="row-body">
                   <strong>{reminder.title}</strong>
@@ -246,7 +246,7 @@ function SegmentGroup({ title, reminders, onSelectReminder, onComplete, onSnooze
                     Snooze
                   </button>
                 </div>
-              </button>
+              </div>
             </li>
           ))}
         </ul>

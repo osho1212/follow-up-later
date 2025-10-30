@@ -1,15 +1,48 @@
 import { createContext, useCallback, useContext, useEffect, useMemo, useState } from "react";
 import { initialReminders, templates, integrations } from "../data/sampleData.js";
+import { useAuth } from "./AuthContext.jsx";
+import {
+  createReminder,
+  updateReminder,
+  deleteReminder,
+  subscribeToReminders,
+} from "../services/reminderService.js";
 
 const DeviceContext = createContext(null);
 
 export function DeviceContextProvider({ children }) {
-  const [reminders, setReminders] = useState(() => normalizeReminders(initialReminders));
-  const [activeReminderId, setActiveReminderId] = useState(reminders[0]?.id ?? null);
-  const [completionLog, setCompletionLog] = useState(() =>
-    initialiseCompletionLog(initialReminders)
-  );
+  const { user } = useAuth();
+  const [reminders, setReminders] = useState([]);
+  const [activeReminderId, setActiveReminderId] = useState(null);
+  const [completionLog, setCompletionLog] = useState({});
   const [reminderSettings, setReminderSettings] = useState(defaultReminderSettings);
+  const [loading, setLoading] = useState(true);
+
+  // Subscribe to Firestore reminders in real-time
+  useEffect(() => {
+    if (!user) {
+      setReminders([]);
+      setLoading(false);
+      return;
+    }
+
+    setLoading(true);
+    const unsubscribe = subscribeToReminders(user.uid, (firestoreReminders, error) => {
+      if (error) {
+        console.error("Error fetching reminders:", error);
+        setReminders([]);
+      } else {
+        const normalized = normalizeReminders(firestoreReminders);
+        setReminders(normalized);
+        if (normalized.length > 0 && !activeReminderId) {
+          setActiveReminderId(normalized[0].id);
+        }
+      }
+      setLoading(false);
+    });
+
+    return () => unsubscribe();
+  }, [user]);
 
   useEffect(() => {
     const derivedLog = buildCompletionLogFromReminders(reminders);
@@ -22,7 +55,9 @@ export function DeviceContextProvider({ children }) {
   }, [reminders]);
 
   const addReminder = useCallback(
-    ({ title, note, dueDate, dueTime, mediaType, source }) => {
+    async ({ title, note, dueDate, dueTime, mediaType, source }) => {
+      if (!user) return null;
+
       const now = new Date();
       const normalizedSource = source === "share" ? "share" : "manual";
       const normalizedMediaType = mediaType ?? "text";
@@ -31,8 +66,8 @@ export function DeviceContextProvider({ children }) {
       const dueAt = buildDueDate(dueDate, dueTime, now, reminderSettings.defaultDueTime);
       const dueEpoch = dueAt.getTime();
 
-      const reminder = {
-        id: generateReminderId(),
+      const reminderData = {
+        userId: user.uid,
         title: normalizedTitle.length > 0 ? normalizedTitle : "Untitled follow-up",
         mediaType: normalizedMediaType,
         source: normalizedSource,
@@ -47,172 +82,161 @@ export function DeviceContextProvider({ children }) {
         activity: [createActivityEntry(now)],
       };
 
-      setReminders((prev) => [reminder, ...prev]);
-      setActiveReminderId(reminder.id);
-      return reminder;
+      const { id, error } = await createReminder(user.uid, reminderData);
+
+      if (error) {
+        console.error("Error creating reminder:", error);
+        return null;
+      }
+
+      setActiveReminderId(id);
+      return { id, ...reminderData };
     },
-    [reminderSettings.defaultDueTime]
+    [user, reminderSettings.defaultDueTime]
   );
 
-  const removeReminder = useCallback((reminderId) => {
-    const outcome = {
-      removed: false,
-      nextActiveId: null,
-    };
+  const removeReminder = useCallback(async (reminderId) => {
+    if (!user) return null;
 
-    setReminders((prev) => {
-      const next = [];
-      for (const item of prev) {
-        if (item.id === reminderId) {
-          outcome.removed = true;
-        } else {
-          next.push(item);
-        }
-      }
+    const { error } = await deleteReminder(reminderId);
 
-      if (!outcome.removed) {
-        return prev;
-      }
-
-      outcome.nextActiveId = next[0]?.id ?? null;
-      return next;
-    });
-
-    if (outcome.removed) {
-      setActiveReminderId((currentId) =>
-        currentId === reminderId ? outcome.nextActiveId : currentId
-      );
+    if (error) {
+      console.error("Error deleting reminder:", error);
+      return null;
     }
 
-    return outcome.nextActiveId;
-  }, []);
-
-  const completeReminder = useCallback((reminderId) => {
-    const now = new Date();
-    const completionStamp = now.toISOString();
-    let didComplete = false;
-
+    // Update local state
     setReminders((prev) => {
-      let modified = false;
-      const next = prev.map((item) => {
-        if (item.id !== reminderId || item.status === "completed") {
-          return item;
-        }
-        modified = true;
-        return {
-          ...item,
-          status: "completed",
-          completedAtISO: completionStamp,
-          countdown: formatCompletionCountdown(now, now),
-          activity: [createActivityEntry(now, "Marked complete"), ...item.activity],
-        };
-      });
+      const next = prev.filter((item) => item.id !== reminderId);
+      const nextActiveId = next[0]?.id ?? null;
 
-      if (!modified) {
-        return prev;
-      }
+      setActiveReminderId((currentId) =>
+        currentId === reminderId ? nextActiveId : currentId
+      );
 
-      didComplete = true;
       return next;
     });
 
-  }, []);
+    return reminders.find(r => r.id !== reminderId)?.[0]?.id ?? null;
+  }, [user, reminders]);
+
+  const completeReminder = useCallback(async (reminderId) => {
+    if (!user) return;
+
+    const now = new Date();
+    const completionStamp = now.toISOString();
+
+    const updates = {
+      status: "completed",
+      completedAtISO: completionStamp,
+      countdown: formatCompletionCountdown(now, now),
+    };
+
+    const { error } = await updateReminder(reminderId, updates);
+
+    if (error) {
+      console.error("Error completing reminder:", error);
+      return;
+    }
+  }, [user]);
 
   const undoCompleteReminder = useCallback(
-    (reminderId) => {
+    async (reminderId) => {
+      if (!user) return;
+
+      const reminder = reminders.find((r) => r.id === reminderId);
+      if (!reminder || reminder.status !== "completed") return;
+
       const reference = new Date();
-      let removedStamp = null;
+      const dueAt =
+        getDueDate(reminder) ??
+        buildDueDate(null, null, reference, reminderSettings.defaultDueTime);
 
-      setReminders((prev) => {
-        let modified = false;
-        const next = prev.map((item) => {
-          if (item.id !== reminderId || item.status !== "completed") {
-            return item;
-          }
-          modified = true;
-          removedStamp = item.completedAtISO ?? null;
-          const dueAt =
-            getDueDate(item) ??
-            buildDueDate(null, null, reference, reminderSettings.defaultDueTime);
-          const reverted = {
-            ...item,
-            dueEpoch: dueAt.getTime(),
-            status: deriveStatus(dueAt, reference),
-            dueLabel: formatDueLabel(dueAt, reference),
-            countdown: formatCountdown(dueAt, reference),
-            activity: [createActivityEntry(reference, "Marked active"), ...item.activity],
-          };
-          delete reverted.completedAtISO;
-          return reverted;
-        });
+      const updates = {
+        dueEpoch: dueAt.getTime(),
+        dueISO: dueAt.toISOString(),
+        status: deriveStatus(dueAt, reference),
+        dueLabel: formatDueLabel(dueAt, reference),
+        countdown: formatCountdown(dueAt, reference),
+        activity: [createActivityEntry(reference, "Marked active"), ...reminder.activity],
+        completedAtISO: null,
+      };
 
-        if (!modified) {
-          removedStamp = null;
-          return prev;
-        }
+      const { error } = await updateReminder(reminderId, updates);
 
-        return next;
-      });
-
+      if (error) {
+        console.error("Error reverting completion:", error);
+      }
     },
-    [reminderSettings.defaultDueTime]
+    [user, reminders, reminderSettings.defaultDueTime]
   );
 
-  const snoozeReminder = useCallback((reminderId, minutes) => {
-    setReminders((prev) =>
-      prev.map((item) => {
-        if (item.id !== reminderId || item.status === "completed") {
-          return item;
-        }
-        const now = new Date();
-        const presetMinutes =
-          minutes ?? reminderSettings.snoozePresets[0]?.minutes ?? 60;
-        const currentDue =
-          getDueDate(item) ?? buildDueDate(null, null, now, reminderSettings.defaultDueTime);
-        const base = currentDue > now ? currentDue : now;
-        const newDue = new Date(base);
-        newDue.setMinutes(newDue.getMinutes() + presetMinutes);
-        return {
-          ...item,
-          dueEpoch: newDue.getTime(),
-          dueISO: newDue.toISOString(),
-          dueLabel: formatDueLabel(newDue, now),
-          status: deriveStatus(newDue, now),
-          countdown: formatCountdown(newDue, now),
-          activity: [
-            createActivityEntry(now, formatSnoozeActivityLabel(presetMinutes)),
-            ...item.activity,
-          ],
-        };
-      })
-    );
-  }, [reminderSettings.defaultDueTime, reminderSettings.snoozePresets]);
+  const snoozeReminder = useCallback(
+    async (reminderId, minutes) => {
+      if (!user) return;
+
+      const reminder = reminders.find((r) => r.id === reminderId);
+      if (!reminder || reminder.status === "completed") return;
+
+      const now = new Date();
+      const presetMinutes =
+        minutes ?? reminderSettings.snoozePresets[0]?.minutes ?? 60;
+      const currentDue =
+        getDueDate(reminder) ?? buildDueDate(null, null, now, reminderSettings.defaultDueTime);
+      const base = currentDue > now ? currentDue : now;
+      const newDue = new Date(base);
+      newDue.setMinutes(newDue.getMinutes() + presetMinutes);
+
+      const updates = {
+        dueEpoch: newDue.getTime(),
+        dueISO: newDue.toISOString(),
+        dueLabel: formatDueLabel(newDue, now),
+        status: deriveStatus(newDue, now),
+        countdown: formatCountdown(newDue, now),
+        activity: [
+          createActivityEntry(now, formatSnoozeActivityLabel(presetMinutes)),
+          ...reminder.activity,
+        ],
+      };
+
+      const { error } = await updateReminder(reminderId, updates);
+
+      if (error) {
+        console.error("Error snoozing reminder:", error);
+      }
+    },
+    [user, reminders, reminderSettings.defaultDueTime, reminderSettings.snoozePresets]
+  );
 
   const updateReminderSchedule = useCallback(
-    (reminderId, { dueDate, dueTime }) => {
-      setReminders((prev) =>
-        prev.map((item) => {
-          if (item.id !== reminderId) {
-            return item;
-          }
-          const now = new Date();
-          const nextDue = buildDueDate(dueDate, dueTime, now, reminderSettings.defaultDueTime);
-          return {
-            ...item,
-            dueEpoch: nextDue.getTime(),
-            dueISO: nextDue.toISOString(),
-            dueLabel: formatDueLabel(nextDue, now),
-            status: item.status === "completed" ? "completed" : deriveStatus(nextDue, now),
-            countdown:
-              item.status === "completed"
-                ? item.countdown
-                : formatCountdown(nextDue, now),
-            activity: [createActivityEntry(now, "Schedule updated"), ...item.activity],
-          };
-        })
-      );
+    async (reminderId, { dueDate, dueTime }) => {
+      if (!user) return;
+
+      const reminder = reminders.find((r) => r.id === reminderId);
+      if (!reminder) return;
+
+      const now = new Date();
+      const nextDue = buildDueDate(dueDate, dueTime, now, reminderSettings.defaultDueTime);
+
+      const updates = {
+        dueEpoch: nextDue.getTime(),
+        dueISO: nextDue.toISOString(),
+        dueLabel: formatDueLabel(nextDue, now),
+        status: reminder.status === "completed" ? "completed" : deriveStatus(nextDue, now),
+        countdown:
+          reminder.status === "completed"
+            ? reminder.countdown
+            : formatCountdown(nextDue, now),
+        activity: [createActivityEntry(now, "Schedule updated"), ...reminder.activity],
+      };
+
+      const { error } = await updateReminder(reminderId, updates);
+
+      if (error) {
+        console.error("Error updating schedule:", error);
+      }
     },
-    [reminderSettings.defaultDueTime]
+    [user, reminders, reminderSettings.defaultDueTime]
   );
 
   const updateDefaultDueTime = useCallback((timeString) => {
