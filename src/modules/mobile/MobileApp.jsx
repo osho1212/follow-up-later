@@ -79,12 +79,27 @@ export default function MobileApp() {
   return (
     <div className="mobile-stage">
       <div className="mobile-shell">
-        <div className="mobile-status">
-          <span className="mobile-signal" />
-          <span>9:41</span>
-          <span className="mobile-battery" />
-        </div>
+        {/* Mockup notch removed */}
         <div className="mobile-content">{renderScreen()}</div>
+        
+        <div className="mobile-floating-actions">
+          <button
+            type="button"
+            className="floating-btn"
+            onClick={handleCreateManual}
+            aria-label="Create manual follow-up"
+          >
+            + Follow-Up
+          </button>
+          <button
+            type="button"
+            className="floating-outline-btn"
+            onClick={handleCreateShare}
+          >
+            Share Sheet
+          </button>
+        </div>
+
         <nav className="mobile-tabbar" aria-label="Primary navigation">
           {TABS.map((tab) => (
             <button
@@ -102,52 +117,6 @@ export default function MobileApp() {
             </button>
           ))}
         </nav>
-      </div>
-
-      {showDetail && (
-        <MobileReminderDetail
-          reminderId={activeReminderId}
-          onClose={() => setShowDetail(false)}
-          onUpgrade={() => setShowPaywall(true)}
-          onComplete={(id) => {
-            completeReminder(id);
-            setShowDetail(false);
-          }}
-          onSnooze={(id) => {
-            snoozeReminder(id);
-            setShowDetail(false);
-          }}
-          onUndo={(id) => {
-            undoCompleteReminder(id);
-            setShowDetail(false);
-          }}
-          onReschedule={(id, payload) => {
-            updateReminderSchedule(id, payload);
-            setShowDetail(false);
-          }}
-        />
-      )}
-
-      {showSearch && <MobileSearchOverlay onClose={() => setShowSearch(false)} />}
-
-      {showPaywall && <MobilePaywall onClose={() => setShowPaywall(false)} />}
-
-      <div className="mobile-floating-actions">
-        <button
-          type="button"
-          className="floating-btn"
-          onClick={handleCreateManual}
-          aria-label="Create manual follow-up"
-        >
-          + Follow-Up
-        </button>
-        <button
-          type="button"
-          className="floating-outline-btn"
-          onClick={handleCreateShare}
-        >
-          Share Sheet
-        </button>
       </div>
     </div>
   );
